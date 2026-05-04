@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+
+  db:
+    image: postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: repair
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  soap-server:
+    build: ./server
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+  invoice-service:
+    build: ./invoice-service
+    ports:
+      - "5000:5000"
+
+volumes:
+  db_data:

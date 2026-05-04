@@ -11,6 +11,12 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Collections;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import javax.imageio.ImageIO;
 
 public class ClientGUI extends JFrame {
 
@@ -23,6 +29,7 @@ public class ClientGUI extends JFrame {
     private JList<String> imageList = new JList<>(imageListModel);
 
     private RepairService service;
+    private List<RepairRequest> cachedRequests = new ArrayList<>();
 
     // ===== LISTA ZGŁOSZEŃ =====
     private JTable requestTable;
@@ -130,15 +137,13 @@ public class ClientGUI extends JFrame {
     // ---------- LOAD REQUESTS ----------
     private void loadRequests() {
         try {
-            List<RepairRequest> list = service.getAllRequests();
+            cachedRequests = service.getAllRequests();
 
             requestModel.setRowCount(0);
 
-            for (int i = 0; i < list.size(); i++) {
-                RepairRequest r = list.get(i);
-
+            for (RepairRequest r : cachedRequests) {
                 requestModel.addRow(new Object[]{
-                        i,
+                        r.getId(),
                         r.getDevice(),
                         r.getStatus()
                 });
@@ -156,7 +161,12 @@ public class ClientGUI extends JFrame {
         if (row == -1) return;
 
         int id = (int) requestTable.getValueAt(row, 0);
-        RepairRequest r = service.getAllRequests().get(id);
+        RepairRequest r = cachedRequests.stream()
+                .filter(x -> x.getId() == id)
+                .findFirst()
+                .orElse(null);
+
+        if (r == null) return;
 
         JDialog dialog = new JDialog(this, "Request details", true);
         dialog.setSize(800, 600);
@@ -210,7 +220,7 @@ public class ClientGUI extends JFrame {
     // ---------- SOAP ----------
     private void initSOAP() {
         try {
-            URL url = new URL("http://192.168.1.109:8080/repair?wsdl");
+            URL url = new URL("http://192.168.0.193:8080/repair?wsdl");
             QName qname = new QName("http://server/", "RepairServiceImplService");
 
             Service s = Service.create(url, qname);
@@ -230,7 +240,10 @@ public class ClientGUI extends JFrame {
             r.setDescription(descArea.getText());
             r.setImagesBase64(new ArrayList<>(imagesBase64));
 
-            service.sendRepairRequest(r);
+            InvoiceResponse invoice = service.sendRepairRequest(r);
+            if (invoice != null) {
+                r.setInvoice(invoice);
+            }
 
             JOptionPane.showMessageDialog(this, "Request sent!");
             clearForm();
@@ -260,8 +273,14 @@ public class ClientGUI extends JFrame {
     private void removeImages() {
         List<String> selected = imageList.getSelectedValuesList();
 
+        List<Integer> indices = new ArrayList<>();
         for (String s : selected) {
-            int i = imageListModel.indexOf(s);
+            indices.add(imageListModel.indexOf(s));
+        }
+
+        indices.sort(Collections.reverseOrder());
+
+        for (int i : indices) {
             imageListModel.remove(i);
             imagesBase64.remove(i);
         }

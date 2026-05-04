@@ -3,6 +3,7 @@ package client;
 import java.util.List;
 
 public class RepairRequest {
+    private int id;
     private String clientName;
     private String device;
     private String description;
@@ -28,8 +29,10 @@ public class RepairRequest {
     public InvoiceResponse getInvoice() {
         return invoice;
     }
-
     public void setInvoice(InvoiceResponse invoice) {
         this.invoice = invoice;
     }
+
+    public int getId() { return id; }
+    public void setId(int id) { this.id = id; }
 }
