@@ -1,49 +1,53 @@
 package client;
 
 import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import javax.xml.namespace.QName;
+import javax.xml.ws.Service;
 import java.awt.*;
 import java.io.File;
+import java.net.URL;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
-
-import javax.xml.ws.Service;
-import javax.xml.namespace.QName;
-import java.net.URL;
 
 public class ClientGUI extends JFrame {
 
     private JTextField nameField = new JTextField();
     private JTextField deviceField = new JTextField();
     private JTextArea descArea = new JTextArea(4, 20);
-    private JTextArea output = new JTextArea();
 
     private DefaultListModel<String> imageListModel = new DefaultListModel<>();
     private List<String> imagesBase64 = new ArrayList<>();
-
     private JList<String> imageList = new JList<>(imageListModel);
 
     private RepairService service;
 
+    // ===== LISTA ZGŁOSZEŃ =====
+    private JTable requestTable;
+    private DefaultTableModel requestModel;
+
     public ClientGUI() {
         setTitle("🔧 Repair Service Client");
-        setSize(650, 500);
+        setSize(900, 600);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
         setLayout(new BorderLayout(10, 10));
 
         add(buildFormPanel(), BorderLayout.NORTH);
+        add(buildTablePanel(), BorderLayout.CENTER);
 
         initSOAP();
+        loadRequests();
     }
 
-    // ---------- UI ----------
+    // ---------- FORM ----------
     private JPanel buildFormPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         GridBagConstraints c = new GridBagConstraints();
-        c.insets = new Insets(5,5,5,5);
+        c.insets = new Insets(5, 5, 5, 5);
         c.fill = GridBagConstraints.HORIZONTAL;
 
         int y = 0;
@@ -51,7 +55,6 @@ public class ClientGUI extends JFrame {
         addRow(panel, c, y++, "Client name:", nameField);
         addRow(panel, c, y++, "Device:", deviceField);
 
-        // Description
         c.gridx = 0; c.gridy = y;
         panel.add(new JLabel("Description:"), c);
 
@@ -59,20 +62,19 @@ public class ClientGUI extends JFrame {
         panel.add(new JScrollPane(descArea), c);
         y++;
 
-        // Images list
+        // images
         c.gridx = 0; c.gridy = y;
         panel.add(new JLabel("Images:"), c);
 
         JPanel imagePanel = new JPanel(new BorderLayout());
-
         imagePanel.add(new JScrollPane(imageList), BorderLayout.CENTER);
 
-        JPanel btns = new JPanel(new GridLayout(1,2));
+        JPanel btns = new JPanel(new GridLayout(1, 2));
 
-        JButton uploadBtn = new JButton("Add images");
+        JButton uploadBtn = new JButton("Add");
         uploadBtn.addActionListener(e -> uploadImages());
 
-        JButton removeBtn = new JButton("Remove selected");
+        JButton removeBtn = new JButton("Remove");
         removeBtn.addActionListener(e -> removeImages());
 
         btns.add(uploadBtn);
@@ -84,12 +86,7 @@ public class ClientGUI extends JFrame {
         panel.add(imagePanel, c);
         y++;
 
-        // Send button
-        JButton sendBtn = new JButton("Send repair request 🚀");
-        sendBtn.setBackground(new Color(30, 144, 255));
-        sendBtn.setForeground(Color.WHITE);
-        sendBtn.setFocusPainted(false);
-
+        JButton sendBtn = new JButton("Send request 🚀");
         sendBtn.addActionListener(e -> sendRequest());
 
         c.gridx = 1; c.gridy = y;
@@ -98,11 +95,115 @@ public class ClientGUI extends JFrame {
         return panel;
     }
 
+    // ---------- TABLE ----------
+    private JPanel buildTablePanel() {
+
+        requestModel = new DefaultTableModel(
+                new String[]{"ID", "Device", "Status"}, 0
+        ) {
+            public boolean isCellEditable(int r, int c) {
+                return false;
+            }
+        };
+
+        requestTable = new JTable(requestModel);
+
+        requestTable.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent evt) {
+                if (evt.getClickCount() == 2) {
+                    showDetails();
+                }
+            }
+        });
+
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.add(new JScrollPane(requestTable), BorderLayout.CENTER);
+
+        JButton refresh = new JButton("Refresh");
+        refresh.addActionListener(e -> loadRequests());
+
+        panel.add(refresh, BorderLayout.SOUTH);
+
+        return panel;
+    }
+
+    // ---------- LOAD REQUESTS ----------
+    private void loadRequests() {
+        try {
+            List<RepairRequest> list = service.getAllRequests();
+
+            requestModel.setRowCount(0);
+
+            for (int i = 0; i < list.size(); i++) {
+                RepairRequest r = list.get(i);
+
+                requestModel.addRow(new Object[]{
+                        i,
+                        r.getDevice(),
+                        r.getStatus()
+                });
+            }
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "ERROR: " + e.getMessage());
+        }
+    }
+
+    // ---------- DETAILS (WITH INVOICE) ----------
+    private void showDetails() {
+
+        int row = requestTable.getSelectedRow();
+        if (row == -1) return;
+
+        int id = (int) requestTable.getValueAt(row, 0);
+        RepairRequest r = service.getAllRequests().get(id);
+
+        JDialog dialog = new JDialog(this, "Request details", true);
+        dialog.setSize(800, 600);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout());
+
+        JTextArea info = new JTextArea();
+        info.setEditable(false);
+        info.setText(
+                "Device: " + r.getDevice() + "\n" +
+                        "Status: " + r.getStatus() + "\n" +
+                        "Description: " + r.getDescription() + "\n"
+        );
+
+        dialog.add(new JScrollPane(info), BorderLayout.NORTH);
+
+        JTextArea invoiceArea = new JTextArea();
+        invoiceArea.setEditable(false);
+
+        if (r.getInvoice() != null) {
+            InvoiceResponse inv = r.getInvoice();
+
+            invoiceArea.setText(
+                    "=== INVOICE ===\n" +
+                            "ID: " + inv.getInvoiceId() + "\n" +
+                            "Price: " + inv.getPrice() + "\n" +
+                            "Koszt usługi: " + inv.getLaborCost() + "zł\n" +
+                            "Koszt części: " + inv.getPartsCost() + "zł\n" +
+                            "Opis: \n" + inv.getActions()
+            );
+        } else {
+            invoiceArea.setText("No invoice yet");
+        }
+
+        dialog.add(new JScrollPane(invoiceArea), BorderLayout.CENTER);
+
+        dialog.setVisible(true);
+    }
+
+
     private void addRow(JPanel panel, GridBagConstraints c, int y, String label, JComponent field) {
-        c.gridx = 0; c.gridy = y;
+        c.gridx = 0;
+        c.gridy = y;
         panel.add(new JLabel(label), c);
 
         c.gridx = 1;
+        c.weightx = 1.0;
         panel.add(field, c);
     }
 
@@ -116,50 +217,7 @@ public class ClientGUI extends JFrame {
             service = s.getPort(RepairService.class);
 
         } catch (Exception e) {
-            output.setText("SOAP ERROR: " + e.getMessage());
-        }
-    }
-
-    // ---------- IMAGE UPLOAD ----------
-    private void uploadImages() {
-        JFileChooser chooser = new JFileChooser();
-        chooser.setMultiSelectionEnabled(true);
-
-        int result = chooser.showOpenDialog(this);
-        if (result == JFileChooser.APPROVE_OPTION) {
-
-            File[] files = chooser.getSelectedFiles();
-
-            for (File file : files) {
-                try {
-                    byte[] bytes = Files.readAllBytes(file.toPath());
-                    String base64 = Base64.getEncoder().encodeToString(bytes);
-
-                    imagesBase64.add(base64);
-                    imageListModel.addElement(file.getName());
-
-                } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(this,
-                            "Error reading file: " + file.getName());
-                }
-            }
-        }
-    }
-
-    // -------- REMOVE ---------
-    private void removeImages() {
-        List<String> selected = imageList.getSelectedValuesList();
-
-        for (String name : selected) {
-            int index = imageListModel.indexOf(name);
-
-            if (index != -1) {
-                imageListModel.remove(index);
-
-                if (index < imagesBase64.size()) {
-                    imagesBase64.remove(index);
-                }
-            }
+            JOptionPane.showMessageDialog(this, "SOAP ERROR: " + e.getMessage());
         }
     }
 
@@ -172,31 +230,44 @@ public class ClientGUI extends JFrame {
             r.setDescription(descArea.getText());
             r.setImagesBase64(new ArrayList<>(imagesBase64));
 
-            InvoiceResponse res = service.sendRepairRequest(r);
+            service.sendRepairRequest(r);
 
-            // ✅ POPUP SUCCESS
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Zgłoszenie zostało poprawnie wysłane!",
-                    "Sukces",
-                    JOptionPane.INFORMATION_MESSAGE
-            );
-
+            JOptionPane.showMessageDialog(this, "Request sent!");
             clearForm();
+            loadRequests();
 
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Błąd wysyłania zgłoszenia: " + e.getMessage(),
-                    "Error",
-                    JOptionPane.ERROR_MESSAGE
-            );
-
-            output.setText("ERROR: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, "Error: " + e.getMessage());
         }
     }
 
-    // -------- CLEAR FORM -----
+    // ---------- IMAGES ----------
+    private void uploadImages() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setMultiSelectionEnabled(true);
+
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            for (File file : chooser.getSelectedFiles()) {
+                try {
+                    byte[] bytes = Files.readAllBytes(file.toPath());
+                    imagesBase64.add(Base64.getEncoder().encodeToString(bytes));
+                    imageListModel.addElement(file.getName());
+                } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    private void removeImages() {
+        List<String> selected = imageList.getSelectedValuesList();
+
+        for (String s : selected) {
+            int i = imageListModel.indexOf(s);
+            imageListModel.remove(i);
+            imagesBase64.remove(i);
+        }
+    }
+
+    // ---------- CLEAR ----------
     private void clearForm() {
         nameField.setText("");
         deviceField.setText("");
@@ -208,8 +279,6 @@ public class ClientGUI extends JFrame {
 
     // ---------- MAIN ----------
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            new ClientGUI().setVisible(true);
-        });
+        SwingUtilities.invokeLater(() -> new ClientGUI().setVisible(true));
     }
 }

@@ -8,6 +8,7 @@ public class RepairRequest {
     private String description;
     private List<String> imagesBase64;
     private String status;
+    private InvoiceResponse invoice;
 
     public String getClientName() { return clientName; }
     public void setClientName(String clientName) { this.clientName = clientName; }
@@ -23,4 +24,12 @@ public class RepairRequest {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public InvoiceResponse getInvoice() {
+        return invoice;
+    }
+
+    public void setInvoice(InvoiceResponse invoice) {
+        this.invoice = invoice;
+    }
 }

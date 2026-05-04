@@ -14,4 +14,7 @@ public interface RepairService {
 
     @WebMethod
     void updateStatus(int index, String status);
+
+    @WebMethod
+    InvoiceResponse createInvoice(InvoiceRequest request);
 }
