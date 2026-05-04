@@ -1,5 +1,10 @@
 package client;
 
+import common.InvoiceRequest;
+import common.InvoiceResponse;
+import common.RepairRequest;
+import common.RepairService;
+
 import java.util.List;
 
 public class AdminDataController {

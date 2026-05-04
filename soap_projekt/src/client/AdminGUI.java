@@ -1,5 +1,10 @@
 package client;
 
+import common.InvoiceRequest;
+import common.InvoiceResponse;
+import common.RepairRequest;
+import common.RepairService;
+
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.xml.namespace.QName;

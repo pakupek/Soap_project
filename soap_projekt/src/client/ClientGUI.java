@@ -6,17 +6,16 @@ import javax.xml.namespace.QName;
 import javax.xml.ws.Service;
 import java.awt.*;
 import java.io.File;
-import java.net.URL;
 import java.nio.file.Files;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
+import java.util.Base64;
 import java.util.Collections;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
-import javax.imageio.ImageIO;
+import java.net.URL;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import common.*;
 
 public class ClientGUI extends JFrame {
 
@@ -31,272 +30,198 @@ public class ClientGUI extends JFrame {
     private RepairService service;
     private List<RepairRequest> cachedRequests = new ArrayList<>();
 
-    // ===== LISTA ZGŁOSZEŃ =====
     private JTable requestTable;
     private DefaultTableModel requestModel;
+
+    private static final String CLIENT_FILE = "client_requests.json";
+    private static final ObjectMapper mapper = new ObjectMapper();
 
     public ClientGUI() {
         setTitle("🔧 Repair Service Client");
         setSize(900, 600);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
-
         setLayout(new BorderLayout(10, 10));
 
         add(buildFormPanel(), BorderLayout.NORTH);
         add(buildTablePanel(), BorderLayout.CENTER);
 
         initSOAP();
-        loadRequests();
+        loadRequestsLocal();
     }
 
-    // ---------- FORM ----------
+    // ---- panels ----
     private JPanel buildFormPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(5, 5, 5, 5);
         c.fill = GridBagConstraints.HORIZONTAL;
-
         int y = 0;
-
         addRow(panel, c, y++, "Client name:", nameField);
         addRow(panel, c, y++, "Device:", deviceField);
-
         c.gridx = 0; c.gridy = y;
         panel.add(new JLabel("Description:"), c);
-
         c.gridx = 1;
         panel.add(new JScrollPane(descArea), c);
         y++;
-
         // images
         c.gridx = 0; c.gridy = y;
         panel.add(new JLabel("Images:"), c);
 
-        JPanel imagePanel = new JPanel(new BorderLayout());
-        imagePanel.add(new JScrollPane(imageList), BorderLayout.CENTER);
-
+        JPanel imgPanel = new JPanel(new BorderLayout());
+        imgPanel.add(new JScrollPane(imageList), BorderLayout.CENTER);
         JPanel btns = new JPanel(new GridLayout(1, 2));
-
-        JButton uploadBtn = new JButton("Add");
-        uploadBtn.addActionListener(e -> uploadImages());
-
-        JButton removeBtn = new JButton("Remove");
-        removeBtn.addActionListener(e -> removeImages());
-
-        btns.add(uploadBtn);
-        btns.add(removeBtn);
-
-        imagePanel.add(btns, BorderLayout.SOUTH);
+        JButton add = new JButton("Add");
+        add.addActionListener(e -> uploadImages());
+        JButton rem = new JButton("Remove");
+        rem.addActionListener(e -> removeImages());
+        btns.add(add);
+        btns.add(rem);
+        imgPanel.add(btns, BorderLayout.SOUTH);
 
         c.gridx = 1;
-        panel.add(imagePanel, c);
-        y++;
-
-        JButton sendBtn = new JButton("Send request 🚀");
-        sendBtn.addActionListener(e -> sendRequest());
-
+        panel.add(imgPanel, c); y++;
+        JButton send = new JButton("Send request 🚀");
+        send.addActionListener(e -> sendRequest());
         c.gridx = 1; c.gridy = y;
-        panel.add(sendBtn, c);
-
+        panel.add(send, c);
         return panel;
     }
 
-    // ---------- TABLE ----------
     private JPanel buildTablePanel() {
-
-        requestModel = new DefaultTableModel(
-                new String[]{"ID", "Device", "Status"}, 0
-        ) {
-            public boolean isCellEditable(int r, int c) {
-                return false;
-            }
+        requestModel = new DefaultTableModel(new String[]{"ID", "Device", "Status"}, 0) {
+            public boolean isCellEditable(int r, int c) { return false; }
         };
-
         requestTable = new JTable(requestModel);
-
         requestTable.addMouseListener(new java.awt.event.MouseAdapter() {
-            public void mouseClicked(java.awt.event.MouseEvent evt) {
-                if (evt.getClickCount() == 2) {
-                    showDetails();
-                }
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (e.getClickCount() == 2) showDetails();
             }
         });
 
         JPanel panel = new JPanel(new BorderLayout());
         panel.add(new JScrollPane(requestTable), BorderLayout.CENTER);
-
-        JButton refresh = new JButton("Refresh");
-        refresh.addActionListener(e -> loadRequests());
-
+        JButton refresh = new JButton("Reload local");
+        refresh.addActionListener(e -> loadRequestsLocal());
         panel.add(refresh, BorderLayout.SOUTH);
-
         return panel;
     }
 
-    // ---------- LOAD REQUESTS ----------
-    private void loadRequests() {
-        try {
-            cachedRequests = service.getAllRequests();
-
-            requestModel.setRowCount(0);
-
-            for (RepairRequest r : cachedRequests) {
-                requestModel.addRow(new Object[]{
-                        r.getId(),
-                        r.getDevice(),
-                        r.getStatus()
-                });
-            }
-
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "ERROR: " + e.getMessage());
-        }
-    }
-
-    // ---------- DETAILS (WITH INVOICE) ----------
-    private void showDetails() {
-
-        int row = requestTable.getSelectedRow();
-        if (row == -1) return;
-
-        int id = (int) requestTable.getValueAt(row, 0);
-        RepairRequest r = cachedRequests.stream()
-                .filter(x -> x.getId() == id)
-                .findFirst()
-                .orElse(null);
-
-        if (r == null) return;
-
-        JDialog dialog = new JDialog(this, "Request details", true);
-        dialog.setSize(800, 600);
-        dialog.setLocationRelativeTo(this);
-        dialog.setLayout(new BorderLayout());
-
-        JTextArea info = new JTextArea();
-        info.setEditable(false);
-        info.setText(
-                "Device: " + r.getDevice() + "\n" +
-                        "Status: " + r.getStatus() + "\n" +
-                        "Description: " + r.getDescription() + "\n"
-        );
-
-        dialog.add(new JScrollPane(info), BorderLayout.NORTH);
-
-        JTextArea invoiceArea = new JTextArea();
-        invoiceArea.setEditable(false);
-
-        if (r.getInvoice() != null) {
-            InvoiceResponse inv = r.getInvoice();
-
-            invoiceArea.setText(
-                    "=== INVOICE ===\n" +
-                            "ID: " + inv.getInvoiceId() + "\n" +
-                            "Price: " + inv.getPrice() + "\n" +
-                            "Koszt usługi: " + inv.getLaborCost() + "zł\n" +
-                            "Koszt części: " + inv.getPartsCost() + "zł\n" +
-                            "Opis: \n" + inv.getActions()
-            );
-        } else {
-            invoiceArea.setText("No invoice yet");
-        }
-
-        dialog.add(new JScrollPane(invoiceArea), BorderLayout.CENTER);
-
-        dialog.setVisible(true);
-    }
-
-
     private void addRow(JPanel panel, GridBagConstraints c, int y, String label, JComponent field) {
-        c.gridx = 0;
-        c.gridy = y;
-        panel.add(new JLabel(label), c);
-
-        c.gridx = 1;
-        c.weightx = 1.0;
-        panel.add(field, c);
+        c.gridx = 0; c.gridy = y; panel.add(new JLabel(label), c);
+        c.gridx = 1; c.weightx = 1.0; panel.add(field, c);
     }
 
-    // ---------- SOAP ----------
+    // ---- SOAP ----
     private void initSOAP() {
         try {
             URL url = new URL("http://192.168.0.193:8080/repair?wsdl");
-            QName qname = new QName("http://server/", "RepairServiceImplService");
 
+            QName qname = new QName(
+                    "http://server/",
+                    "RepairServiceImplService"
+            );
             Service s = Service.create(url, qname);
             service = s.getPort(RepairService.class);
-
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "SOAP ERROR: " + e.getMessage());
         }
     }
 
-    // ---------- SEND ----------
-    private void sendRequest() {
+    // ---- LOCAL LOAD ----
+    private void loadRequestsLocal() {
         try {
-            RepairRequest r = new RepairRequest();
-            r.setClientName(nameField.getText());
-            r.setDevice(deviceField.getText());
-            r.setDescription(descArea.getText());
-            r.setImagesBase64(new ArrayList<>(imagesBase64));
-
-            InvoiceResponse invoice = service.sendRepairRequest(r);
-            if (invoice != null) {
-                r.setInvoice(invoice);
+            File f = new File(CLIENT_FILE);
+            if (f.exists()) {
+                cachedRequests = mapper.readValue(f, new TypeReference<List<RepairRequest>>() {});
+            } else {
+                cachedRequests = new ArrayList<>();
             }
 
-            JOptionPane.showMessageDialog(this, "Request sent!");
-            clearForm();
-            loadRequests();
+            requestModel.setRowCount(0);
+            for (RepairRequest r : cachedRequests) {
+                requestModel.addRow(new Object[]{r.getId(), r.getDevice(), r.getStatus()});
+            }
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Local load error: " + e.getMessage());
+        }
+    }
 
+    // ---- LOCAL SAVE ----
+    private void saveLocalRequests() {
+        try {
+            mapper.writerWithDefaultPrettyPrinter().writeValue(new File(CLIENT_FILE), cachedRequests);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    // ---- SEND ----
+    private void sendRequest() {
+        try {
+            RepairRequest req = new RepairRequest();
+            req.setClientName(nameField.getText());
+            req.setDevice(deviceField.getText());
+            req.setDescription(descArea.getText());
+            req.setImagesBase64(new ArrayList<>(imagesBase64));
+
+            RepairRequest created = service.sendRepairRequest(req); // teraz serwer nadaje ID
+            cachedRequests.add(created);
+            saveLocalRequests();
+            JOptionPane.showMessageDialog(this, "Request sent (ID=" + created.getId() + ")");
+            clearForm();
+            loadRequestsLocal();
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error: " + e.getMessage());
         }
     }
 
-    // ---------- IMAGES ----------
-    private void uploadImages() {
-        JFileChooser chooser = new JFileChooser();
-        chooser.setMultiSelectionEnabled(true);
+    private void showDetails() {
+        int row = requestTable.getSelectedRow();
+        if (row == -1) return;
+        int id = (int) requestTable.getValueAt(row, 0);
+        RepairRequest r = cachedRequests.stream().filter(x -> x.getId() == id).findFirst().orElse(null);
+        if (r == null) return;
+        JDialog d = new JDialog(this, "Request details", true);
+        d.setSize(600, 400);
+        JTextArea area = new JTextArea();
+        area.setEditable(false);
+        area.setText("Device: " + r.getDevice() + "\nStatus: " + r.getStatus() + "\nDesc: " + r.getDescription());
+        d.add(new JScrollPane(area));
+        d.setVisible(true);
+    }
 
-        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            for (File file : chooser.getSelectedFiles()) {
+    // ---- image ops ----
+    private void uploadImages() {
+        JFileChooser ch = new JFileChooser();
+        ch.setMultiSelectionEnabled(true);
+        if (ch.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            for (File f : ch.getSelectedFiles()) {
                 try {
-                    byte[] bytes = Files.readAllBytes(file.toPath());
+                    byte[] bytes = Files.readAllBytes(f.toPath());
                     imagesBase64.add(Base64.getEncoder().encodeToString(bytes));
-                    imageListModel.addElement(file.getName());
+                    imageListModel.addElement(f.getName());
                 } catch (Exception ignored) {}
             }
         }
     }
 
     private void removeImages() {
-        List<String> selected = imageList.getSelectedValuesList();
-
-        List<Integer> indices = new ArrayList<>();
-        for (String s : selected) {
-            indices.add(imageListModel.indexOf(s));
-        }
-
-        indices.sort(Collections.reverseOrder());
-
-        for (int i : indices) {
-            imageListModel.remove(i);
-            imagesBase64.remove(i);
-        }
+        List<String> sel = imageList.getSelectedValuesList();
+        List<Integer> idx = new ArrayList<>();
+        for (String s : sel) idx.add(imageListModel.indexOf(s));
+        idx.sort(Collections.reverseOrder());
+        for (int i : idx) { imageListModel.remove(i); imagesBase64.remove(i); }
     }
 
-    // ---------- CLEAR ----------
     private void clearForm() {
         nameField.setText("");
         deviceField.setText("");
         descArea.setText("");
-
-        imagesBase64.clear();
         imageListModel.clear();
+        imagesBase64.clear();
     }
 
-    // ---------- MAIN ----------
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> new ClientGUI().setVisible(true));
     }

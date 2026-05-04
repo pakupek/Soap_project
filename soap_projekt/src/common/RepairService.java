@@ -1,4 +1,4 @@
-package client;
+package common;
 
 import javax.jws.WebMethod;
 import javax.jws.WebService;
@@ -7,7 +7,7 @@ import java.util.List;
 @WebService
 public interface RepairService {
     @WebMethod
-    InvoiceResponse sendRepairRequest(RepairRequest request);
+    RepairRequest sendRepairRequest(RepairRequest request);
 
     @WebMethod
     List<RepairRequest> getAllRequests();
