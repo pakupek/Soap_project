@@ -35,7 +35,6 @@ public class ClientGUI extends JFrame {
         setLayout(new BorderLayout(10, 10));
 
         add(buildFormPanel(), BorderLayout.NORTH);
-        add(buildOutputPanel(), BorderLayout.CENTER);
 
         initSOAP();
     }
@@ -96,14 +95,6 @@ public class ClientGUI extends JFrame {
         c.gridx = 1; c.gridy = y;
         panel.add(sendBtn, c);
 
-        return panel;
-    }
-
-    private JPanel buildOutputPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        output.setEditable(false);
-        output.setFont(new Font("Consolas", Font.PLAIN, 12));
-        panel.add(new JScrollPane(output), BorderLayout.CENTER);
         return panel;
     }
 
@@ -183,16 +174,36 @@ public class ClientGUI extends JFrame {
 
             InvoiceResponse res = service.sendRepairRequest(r);
 
-            output.setText(
-                    "=== INVOICE ===\n" +
-                            "ID: " + res.getInvoiceId() + "\n" +
-                            "Price: " + res.getPrice() + "\n" +
-                            "Status: " + res.getStatus()
+            // ✅ POPUP SUCCESS
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Zgłoszenie zostało poprawnie wysłane!",
+                    "Sukces",
+                    JOptionPane.INFORMATION_MESSAGE
             );
 
+            clearForm();
+
         } catch (Exception e) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Błąd wysyłania zgłoszenia: " + e.getMessage(),
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+            );
+
             output.setText("ERROR: " + e.getMessage());
         }
+    }
+
+    // -------- CLEAR FORM -----
+    private void clearForm() {
+        nameField.setText("");
+        deviceField.setText("");
+        descArea.setText("");
+
+        imagesBase64.clear();
+        imageListModel.clear();
     }
 
     // ---------- MAIN ----------
