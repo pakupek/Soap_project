@@ -3,7 +3,7 @@ version: "3.9"
 services:
 
   db:
-    image: postgres
+    image: postgres:15
     environment:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: admin
@@ -14,16 +14,19 @@ services:
       - "5432:5432"
 
   soap-server:
-    build: ./server
+    build:
+      context: ..
+      dockerfile: soap_projekt/src/server/Dockerfile
     ports:
       - "8080:8080"
     depends_on:
       - db
-
-  invoice-service:
-    build: ./invoice-service
-    ports:
-      - "5000:5000"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: repair
+      DB_USER: admin
+      DB_PASSWORD: admin
 
 volumes:
   db_data:
