@@ -13,6 +13,7 @@ import java.awt.*;
 import java.net.URL;
 import java.util.List;
 import java.util.ArrayList;
+import java.io.File;
 
 public class AdminGUI extends JFrame {
 
@@ -376,7 +377,6 @@ public class AdminGUI extends JFrame {
         int id = (int) table.getValueAt(row, 0);
 
         RepairRequest r = findById(id);
-
         if (r == null) return;
 
         InvoiceResponse inv = r.getInvoice();
@@ -385,10 +385,10 @@ public class AdminGUI extends JFrame {
         JDialog dialog = new JDialog(this, "Invoice details", true);
         dialog.setSize(600, 400);
         dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout());
 
         JTextArea area = new JTextArea();
         area.setEditable(false);
-
         area.setText(
                 "CLIENT: " + r.getClientName() + "\n" +
                         "DEVICE: " + r.getDevice() + "\n\n" +
@@ -398,8 +398,29 @@ public class AdminGUI extends JFrame {
                         "TOTAL: " + inv.getPrice()
         );
 
-        dialog.add(new JScrollPane(area));
+        JButton pdfBtn = new JButton("Generuj PDF");
+        pdfBtn.addActionListener(e -> {
+            try {
+                File pdf = PdfGenerator.generate(
+                        inv.getInvoiceId(),
+                        r.getClientName(),
+                        r.getDevice(),
+                        inv.getActions(),
+                        inv.getLaborCost(),
+                        inv.getPartsCost()
+                );
+                java.awt.Desktop.getDesktop().open(new java.io.File(pdf.getAbsolutePath()));
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(dialog,
+                        "Nie udało się wygenerować PDF:\n" + ex.getMessage(),
+                        "Błąd",
+                        JOptionPane.ERROR_MESSAGE
+                );
+            }
+        });
 
+        dialog.add(new JScrollPane(area), BorderLayout.CENTER);
+        dialog.add(pdfBtn, BorderLayout.SOUTH);
         dialog.setVisible(true);
     }
 
@@ -464,6 +485,7 @@ public class AdminGUI extends JFrame {
                         "Invoice sent!\nID: " + res.getInvoiceId() +
                                 "\nTotal: " + res.getPrice()
                 );
+
 
                 dialog.dispose();
 
