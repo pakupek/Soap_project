@@ -163,7 +163,7 @@ public class AdminGUI extends JFrame {
 
     private void initSOAP() {
         try {
-            URL url = new URL("http://192.168.0.193:8080/repair?wsdl");
+            URL url = new URL("http://100.64.218.17:8080/repair?wsdl");
             QName qname = new QName("http://server/", "RepairServiceImplService");
 
             Service s = Service.create(url, qname);
