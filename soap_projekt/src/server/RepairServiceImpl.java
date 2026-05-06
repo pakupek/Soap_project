@@ -75,4 +75,19 @@ public class RepairServiceImpl implements RepairService {
                     DataStore.save(requests);
                 });
     }
+    @Override
+    public synchronized List<RepairRequest> getAllRequestsLight() {
+        // Zwraca kopie bez zdjęć - tylko metadane i faktura
+        return requests.stream().map(r -> {
+            RepairRequest light = new RepairRequest();
+            light.setId(r.getId());
+            light.setClientName(r.getClientName());
+            light.setDevice(r.getDevice());
+            light.setStatus(r.getStatus());
+            light.setDescription(r.getDescription());
+            light.setInvoice(r.getInvoice());
+            light.setImagesBase64(new java.util.ArrayList<>()); // puste!
+            return light;
+        }).collect(java.util.stream.Collectors.toList());
+    }
 }

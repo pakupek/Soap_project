@@ -101,9 +101,20 @@ public class ClientGUI extends JFrame {
 
         JPanel panel = new JPanel(new BorderLayout());
         panel.add(new JScrollPane(requestTable), BorderLayout.CENTER);
-        JButton refresh = new JButton("Reload local");
-        refresh.addActionListener(e -> loadRequestsLocal());
-        panel.add(refresh, BorderLayout.SOUTH);
+
+        // ---- przyciski na dole tabeli ----
+        JPanel bottomBar = new JPanel(new FlowLayout(FlowLayout.LEFT));
+
+        JButton refreshServer = new JButton("🔄 Sync z serwerem");
+        refreshServer.addActionListener(e -> syncWithServer());
+
+        JButton refreshLocal = new JButton("Reload local");
+        refreshLocal.addActionListener(e -> loadRequestsLocal());
+
+        bottomBar.add(refreshServer);
+        bottomBar.add(refreshLocal);
+
+        panel.add(bottomBar, BorderLayout.SOUTH);
         return panel;
     }
 
@@ -115,16 +126,65 @@ public class ClientGUI extends JFrame {
     // ---- SOAP ----
     private void initSOAP() {
         try {
-            URL url = new URL("http://192.168.0.193:8080/repair?wsdl");
-
-            QName qname = new QName(
-                    "http://server/",
-                    "RepairServiceImplService"
-            );
+            URL url = new URL("http://100.64.218.17:8080/repair?wsdl");
+            QName qname = new QName("http://server/", "RepairServiceImplService");
             Service s = Service.create(url, qname);
             service = s.getPort(RepairService.class);
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "SOAP ERROR: " + e.getMessage());
+        }
+    }
+
+    // ---- SYNC Z SERWEREM ----
+    /**
+     * Pobiera z serwera wszystkie zgłoszenia pasujące do lokalnych ID,
+     * aktualizuje status i fakturę, zapisuje lokalnie.
+     */
+    private void syncWithServer() {
+        if (service == null) {
+            JOptionPane.showMessageDialog(this, "Brak połączenia z serwerem.");
+            return;
+        }
+        try {
+            // Pobieramy pełną listę z serwera
+            List<RepairRequest> serverList = service.getAllRequestsLight();
+
+            // Budujemy mapę id -> RepairRequest po stronie serwera
+            java.util.Map<Integer, RepairRequest> serverMap = new java.util.HashMap<>();
+            for (RepairRequest sr : serverList) {
+                serverMap.put(sr.getId(), sr);
+            }
+
+            boolean anyChange = false;
+
+            for (RepairRequest local : cachedRequests) {
+                RepairRequest server = serverMap.get(local.getId());
+                if (server == null) continue;
+
+                // Aktualizuj status
+                if (!server.getStatus().equals(local.getStatus())) {
+                    local.setStatus(server.getStatus());
+                    anyChange = true;
+                }
+
+                // Aktualizuj fakturę (jeśli admin ją wystawił)
+                if (server.getInvoice() != null && local.getInvoice() == null) {
+                    local.setInvoice(server.getInvoice());
+                    anyChange = true;
+                }
+            }
+
+            if (anyChange) {
+                saveLocalRequests();
+                JOptionPane.showMessageDialog(this, "✅ Dane zaktualizowane.");
+            } else {
+                JOptionPane.showMessageDialog(this, "Brak zmian.");
+            }
+
+            loadRequestsLocal();
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Błąd synchronizacji: " + e.getMessage());
         }
     }
 
@@ -140,7 +200,9 @@ public class ClientGUI extends JFrame {
 
             requestModel.setRowCount(0);
             for (RepairRequest r : cachedRequests) {
-                requestModel.addRow(new Object[]{r.getId(), r.getDevice(), r.getStatus()});
+                // Pokaż "INVOICED" jeśli faktura istnieje
+                String displayStatus = (r.getInvoice() != null) ? "INVOICED 🧾" : r.getStatus();
+                requestModel.addRow(new Object[]{r.getId(), r.getDevice(), displayStatus});
             }
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Local load error: " + e.getMessage());
@@ -165,7 +227,7 @@ public class ClientGUI extends JFrame {
             req.setDescription(descArea.getText());
             req.setImagesBase64(new ArrayList<>(imagesBase64));
 
-            RepairRequest created = service.sendRepairRequest(req); // teraz serwer nadaje ID
+            RepairRequest created = service.sendRepairRequest(req);
             cachedRequests.add(created);
             saveLocalRequests();
             JOptionPane.showMessageDialog(this, "Request sent (ID=" + created.getId() + ")");
@@ -176,19 +238,85 @@ public class ClientGUI extends JFrame {
         }
     }
 
+    // ---- DETAILS (podwójne kliknięcie) ----
     private void showDetails() {
         int row = requestTable.getSelectedRow();
         if (row == -1) return;
+
         int id = (int) requestTable.getValueAt(row, 0);
-        RepairRequest r = cachedRequests.stream().filter(x -> x.getId() == id).findFirst().orElse(null);
+        RepairRequest r = cachedRequests.stream()
+                .filter(x -> x.getId() == id)
+                .findFirst().orElse(null);
         if (r == null) return;
-        JDialog d = new JDialog(this, "Request details", true);
+
+        // Jeśli jest faktura — pokaż jej szczegóły
+        if (r.getInvoice() != null) {
+            showInvoiceDetails(r);
+            return;
+        }
+
+        // Zwykłe szczegóły zgłoszenia
+        JDialog d = new JDialog(this, "Request details #" + id, true);
         d.setSize(600, 400);
+        d.setLocationRelativeTo(this);
+
         JTextArea area = new JTextArea();
         area.setEditable(false);
-        area.setText("Device: " + r.getDevice() + "\nStatus: " + r.getStatus() + "\nDesc: " + r.getDescription());
+        area.setFont(new Font("Consolas", Font.PLAIN, 13));
+        area.setText(
+                "Device:      " + r.getDevice() + "\n" +
+                        "Status:      " + r.getStatus() + "\n" +
+                        "Description: " + r.getDescription() + "\n"
+        );
+
         d.add(new JScrollPane(area));
         d.setVisible(true);
+    }
+
+    // ---- INVOICE DETAILS ----
+    private void showInvoiceDetails(RepairRequest r) {
+        InvoiceResponse inv = r.getInvoice();
+
+        JDialog dialog = new JDialog(this, "Faktura – " + r.getDevice(), true);
+        dialog.setSize(600, 400);
+        dialog.setLocationRelativeTo(this);
+        dialog.setLayout(new BorderLayout());
+
+        JTextArea area = new JTextArea();
+        area.setEditable(false);
+        area.setFont(new Font("Consolas", Font.PLAIN, 13));
+        area.setText(
+                "=== FAKTURA ===\n\n" +
+                        "Klient:      " + r.getClientName() + "\n" +
+                        "Urządzenie:  " + r.getDevice() + "\n\n" +
+                        "Czynności:\n" + inv.getActions() + "\n\n" +
+                        "Robocizna:   " + inv.getLaborCost() + "\n" +
+                        "Części:      " + inv.getPartsCost() + "\n" +
+                        "RAZEM:       " + inv.getPrice() + "\n"
+        );
+
+        JButton pdfBtn = new JButton("📄 Generuj PDF");
+        pdfBtn.addActionListener(e -> {
+            try {
+                File pdf = PdfGenerator.generate(
+                        inv.getInvoiceId(),
+                        r.getClientName(),
+                        r.getDevice(),
+                        inv.getActions(),
+                        inv.getLaborCost(),
+                        inv.getPartsCost()
+                );
+                java.awt.Desktop.getDesktop().open(pdf);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(dialog,
+                        "Nie udało się wygenerować PDF:\n" + ex.getMessage(),
+                        "Błąd", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        dialog.add(new JScrollPane(area), BorderLayout.CENTER);
+        dialog.add(pdfBtn, BorderLayout.SOUTH);
+        dialog.setVisible(true);
     }
 
     // ---- image ops ----

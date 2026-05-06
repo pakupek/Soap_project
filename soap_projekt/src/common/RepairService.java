@@ -17,4 +17,7 @@ public interface RepairService {
 
     @WebMethod
     InvoiceResponse createInvoice(InvoiceRequest request);
+
+    @WebMethod
+    List<RepairRequest> getAllRequestsLight();
 }
